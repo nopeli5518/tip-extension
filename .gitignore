@@ -1,0 +1,15 @@
+# Reference captures of Chaturbate pages — NOT part of the extension.
+# A saved logged-in page embeds a live CSRF token and session data, so it must
+# never be published. Kept locally only.
+whole-page/
+tip-popup.html
+amount-selection.html
+
+# Secrets — never commit
+.env
+.env.*
+
+# Build artifacts
+*.zip
+web-ext-artifacts/
+node_modules/

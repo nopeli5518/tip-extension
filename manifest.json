@@ -1,0 +1,19 @@
+{
+  "manifest_version": 3,
+  "name": "Chaturbate Tip Bot",
+  "version": "1.1.0",
+  "description": "Chat-driven tipping bot for Chaturbate broadcasters: tip commands, limits, rate limiting, repeat tipping, and buying. Loads only when you click the toolbar button.",
+  "browser_specific_settings": {
+    "gecko": {
+      "id": "tip-bot@local.extension",
+      "strict_min_version": "128.0"
+    }
+  },
+  "action": {
+    "default_title": "Load Tip Bot"
+  },
+  "permissions": ["scripting", "activeTab"],
+  "background": {
+    "scripts": ["background.js"]
+  }
+}
