@@ -28,6 +28,12 @@ panel's visibility** (the bot guards against running twice).
 
 ## Install (temporary, for testing)
 
+The extension works on both Firefox and Chrome from the same `manifest.json`
+(the `background` block declares a `service_worker` for Chrome and a `scripts`
+event page for Firefox; each browser uses the key it understands).
+
+### Firefox
+
 1. Open Firefox and go to `about:debugging#/runtime/this-firefox`.
 2. Click **Load Temporary Add-on…**.
 3. Select `manifest.json` in this folder.
@@ -38,6 +44,17 @@ Temporary add-ons are removed when Firefox restarts. To install permanently you
 must sign the extension via [AMO](https://addons.mozilla.org/developers/)
 (`web-ext sign`) or use Firefox Developer/Nightly Edition with unsigned add-ons
 allowed.
+
+### Chrome
+
+1. Open Chrome and go to `chrome://extensions`.
+2. Enable **Developer mode** (top-right toggle).
+3. Click **Load unpacked** and select this folder.
+4. Open a broadcaster page on `chaturbate.com`, open the PM/chat panel, then
+   **click the Tip Bot toolbar button** to load the bot.
+
+Unpacked extensions stay installed until removed, but Chrome will nag on each
+launch; that's expected for developer-loaded extensions.
 
 ## Packaging
 
