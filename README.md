@@ -135,8 +135,11 @@ Broadcaster-only:
 - `tip balance` — tip the full available balance (bypasses max-tip, capped by
   the rate limit).
 - `token balance` / `tip balance` — report/use available tokens.
-- `repeat <amount> <times> [delaySeconds]` — tip repeatedly.
-- `stop repeat` — stop an active repeat.
+- `repeat <amount> <times> [delaySeconds]` — tip a fixed amount repeatedly.
+- `repeat random <times> [delaySeconds]` — tip a fresh random amount (drawn
+  from the panel's Random min/max) each time. Stops as soon as a draw would
+  exceed the max-tip, cumulative, or rate limit.
+- `stop repeat` — stop an active repeat (fixed or random).
 - `buy <amount>` — buy a token package (see **Buying tokens** above; OFF by
   default).
 

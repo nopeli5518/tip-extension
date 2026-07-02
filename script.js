@@ -128,8 +128,19 @@ const broadcasterCommands = [
     {
         command: 'tip_random',
         regex: /^tip random$/,
-        handler: (broadcasterUsername, textContent) => {
-            const tipAmount = parseInt(textContent.split(' ')[1]);
+        handler: (broadcasterUsername) => {
+            if (!botStatus.random || !botStatus.random.enabled) {
+                simulateTyping(`Random tipping is turned off.`, 1).then();
+                return;
+            }
+            const min = parseInt(botStatus.random.min, 10);
+            const max = parseInt(botStatus.random.max, 10);
+            if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max < min) {
+                simulateTyping(`Random tipping isn't set up correctly.`, 1).then();
+                return;
+            }
+            // draw an integer in [min, max]
+            const tipAmount = Math.floor(Math.random() * (max - min + 1)) + min;
             if (!isWithinLimit(tipAmount)) {
                 const remaining = botStatus.limit - botStatus.currentlyTipped;
                 simulateTyping(remaining <= 0
@@ -253,6 +264,67 @@ const broadcasterCommands = [
                 recordTip(tipAmount);
                 count++;
                 console.log(`Repeat tip ${count}/${times}: ${tipAmount} tokens`);
+            };
+
+            doTip();
+            botStatus.repeatInterval = setInterval(doTip, delayMs);
+        }
+    },
+    {
+        command: 'repeat_random',
+        regex: /^repeat random (\d+)( (\d+))?$/,
+        handler: (broadcasterUsername, textContent) => {
+            const parts = textContent.split(' ');
+            const times = parseInt(parts[2]);
+            const delaySec = parts[3] !== undefined ? parseInt(parts[3]) : 0;
+            const delayMs = Math.max(100, delaySec * 1000);
+
+            if (!botStatus.random || !botStatus.random.enabled) {
+                simulateTyping(`Random tipping is turned off.`, 1).then();
+                return;
+            }
+            const min = parseInt(botStatus.random.min, 10);
+            const max = parseInt(botStatus.random.max, 10);
+            if (!Number.isFinite(min) || !Number.isFinite(max) || min <= 0 || max < min) {
+                simulateTyping(`Random tipping isn't set up correctly.`, 1).then();
+                return;
+            }
+
+            if (botStatus.repeatInterval) {
+                clearInterval(botStatus.repeatInterval);
+                botStatus.repeatInterval = null;
+            }
+
+            let count = 0;
+            console.log(`Repeat random starting: range=${min}-${max}, times=${times}, delay=${delayMs}ms, maxTip=${botStatus.maxTip}, limit=${botStatus.limit}, rateLimit=${botStatus.rateLimit}`);
+
+            const doTip = () => {
+                if (count >= times) {
+                    if (botStatus.repeatInterval) {
+                        clearInterval(botStatus.repeatInterval);
+                        botStatus.repeatInterval = null;
+                    }
+                    console.log(`Repeat random finished after ${count} tips.`);
+                    return;
+                }
+
+                // fresh draw each tick
+                const tipAmount = Math.floor(Math.random() * (max - min + 1)) + min;
+
+                if (!isWithinLimit(tipAmount) || !isWithinMaxTip(tipAmount) || !isWithinRate(tipAmount)) {
+                    if (botStatus.repeatInterval) {
+                        clearInterval(botStatus.repeatInterval);
+                        botStatus.repeatInterval = null;
+                    }
+                    console.log(`Repeat random stopped: draw of ${tipAmount} exceeded a limit after ${count} tips.`);
+                    return;
+                }
+
+                tip(broadcasterUsername, tipAmount);
+                botStatus.currentlyTipped += tipAmount;
+                recordTip(tipAmount);
+                count++;
+                console.log(`Repeat random tip ${count}/${times}: ${tipAmount} tokens`);
             };
 
             doTip();

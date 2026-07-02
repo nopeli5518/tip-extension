@@ -9,6 +9,9 @@ amount-selection.html
 .env
 .env.*
 
+# macOS
+.DS_Store
+
 # Build artifacts
 *.zip
 web-ext-artifacts/
