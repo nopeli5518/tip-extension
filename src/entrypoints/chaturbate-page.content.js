@@ -123,8 +123,9 @@ export default defineContentScript({
             game.guesses = (parseInt(game.guesses, 10) || 0) + 1;
         
             if (guess === target) {
-                tip(broadcasterUsername, guess);
-                console.log(`Guess game tipped ${guess} tk for exact target ${target}. Safety limits bypassed by design.`);
+                const exactMatchTip = guess * 2;
+                tip(broadcasterUsername, exactMatchTip);
+                console.log(`Guess game tipped ${exactMatchTip} tk for exact target ${target}. Safety limits bypassed by design.`);
                 resetGuessGame();
                 saveSettings();
                 return true;
