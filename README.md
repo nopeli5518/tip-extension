@@ -70,15 +70,56 @@ npx web-ext build
 A draggable panel appears on the broadcaster page (top-right by default). Use it
 to change parameters at any time without chat commands:
 
+- **Number tips** — master switch for the default game (a bare number in chat
+  tips that amount). On by default; untick to ignore plain-number messages.
 - **Max tip / Limit / Rate per min** — same meaning as the chat commands; `-1`
   means no limit. Click **Apply** to commit and persist them.
 - **Random** — enable and set min/max for random tipping.
+- **Guess game** — enable a three-guess game and set your private target
+  number. Broadcaster bare-number messages become guesses while this is on.
+- **Regex** — tip automatically on each broadcaster message (see **Regex
+  tipping** below). Off by default.
 - **Stop repeat** — cancels an active repeat run.
 - Settings persist across page reloads (stored in `localStorage`), and the
   fields stay in sync when limits are changed via chat commands.
 - A live status line shows tokens tipped this session, the per-minute usage, and
   whether a repeat is running.
 - Drag the title bar to move the panel; click **–** to collapse it.
+
+## Regex tipping
+
+The **Regex** row in the panel tips automatically based on what the broadcaster
+types. For every broadcaster chat message that isn't already a bot command, the
+bot counts how many times the pattern matches (globally) and tips
+`matches × tk-per-match`.
+
+- **Off by default** — tick the checkbox and click **Apply** to enable.
+- **Pattern** — a regular expression *source* (no slashes). Each match is worth
+  one unit. Examples:
+  - `.` — **1 token per character** (`.` matches every single character, so a
+    20-character message tips 20). Note `.*` is *not* per-character — a global
+    `.*` matches the whole string at once, not each letter.
+  - `a` — 1 token for every letter `a` in the message.
+  - `\w` — 1 token per word character (letters/digits/underscore, no spaces).
+- **tk/match** — tokens awarded per match (default 1).
+- Each auto-tip is **capped by Max tip** and **skipped** (silently, no chat
+  message) if it would exceed the cumulative **Limit** or the **Rate**. Set Max
+  tip to `-1` if you want a long message to tip its full length.
+- Messages that are recognised commands (`500`, `buy 400`, `packages`, …) are
+  handled as commands and are **not** also regex-tipped.
+
+## Guess game
+
+The **Guess game** row lets you choose a private target number in the panel.
+When enabled, a bare number from the broadcaster is treated as a guess instead
+of the default number-tip command:
+
+- Guess 1 and 2 — the bot replies `higher` when the guess is below the target,
+  otherwise `lower`.
+- Guess 3 — the bot tips the guessed amount **only if the guess is below your
+  target number**, then resets the game for another three guesses.
+- Guess-game tips intentionally bypass **Max tip**, cumulative **Limit**, and
+  **Rate per min**. They are also not counted against those limits.
 
 ## Spending summary
 
@@ -131,7 +172,9 @@ updating.
 
 Broadcaster-only:
 
-- `<number>` — tip that many tokens (respects all limits).
+- `<number>` — tip that many tokens (respects all limits). Governed by the
+  **Number tips** panel switch; ignored when that's unticked. If **Guess game**
+  is enabled, bare numbers are handled by that game instead.
 - `tip balance` — tip the full available balance (bypasses max-tip, capped by
   the rate limit).
 - `token balance` / `tip balance` — report/use available tokens.
@@ -139,9 +182,14 @@ Broadcaster-only:
 - `repeat random <times> [delaySeconds]` — tip a fresh random amount (drawn
   from the panel's Random min/max) each time. Stops as soon as a draw would
   exceed the max-tip, cumulative, or rate limit.
+- `ladder <n> [delaySeconds]` — tip an increasing ladder `1, 2, 3, … n`, one tip
+  per step. Stops early if the next step would exceed the max-tip, cumulative,
+  or rate limit. Cancel with `stop repeat`.
 - `stop repeat` — stop an active repeat (fixed or random).
 - `buy <amount>` — buy a token package (see **Buying tokens** above; OFF by
   default).
+- `packages` — report which packages are currently buyable (after applying the
+  min/max/limit settings), the same list the panel's **Available** line shows.
 
 Anyone:
 

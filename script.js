@@ -18,6 +18,7 @@ let pmChatContainer = null;
 
 const botStatus = {
     initialized: false,
+    numberTipEnabled: true,   // the default game: a bare number in chat tips that amount
     maxTip: -1,
     limit: -1,
     rateLimit: -1,        // max tokens per rolling 60s window, -1 = no limit
@@ -26,6 +27,16 @@ const botStatus = {
         allow: true,
         min: 1,
         max: 100
+    },
+    guessGame: {
+        enabled: false,
+        target: 0,
+        guesses: 0
+    },
+    regexTip: {
+        enabled: false,    // OFF by default; tip per regex match on each broadcaster message
+        pattern: '',       // regex source: '.' = per character, 'a' = per letter a, etc.
+        perMatch: 1        // tokens per match
     },
     currentlyTipped: 0,
     repeatInterval: null,
@@ -98,12 +109,87 @@ function recordTip(amount) {
     botStatus.recentTips.push({ time: Date.now(), amount });
 }
 
+function resetGuessGame() {
+    if (!botStatus.guessGame) return;
+    botStatus.guessGame.guesses = 0;
+}
+
+function handleGuessGameNumber(broadcasterUsername, guess) {
+    const game = botStatus.guessGame;
+    if (!game || !game.enabled) return false;
+
+    const target = parseInt(game.target, 10);
+    if (!Number.isFinite(target) || target <= 0) {
+        simulateTyping(`Guess game is on, but the target number is not set.`, 1).then();
+        return true;
+    }
+
+    game.guesses = (parseInt(game.guesses, 10) || 0) + 1;
+
+    if (game.guesses < 3) {
+        const answer = guess < target ? 'higher' : 'lower';
+        simulateTyping(answer, 1).then();
+        saveSettings();
+        return true;
+    }
+
+    if (guess < target) {
+        tip(broadcasterUsername, guess);
+        console.log(`Guess game tipped ${guess} tk for target ${target}. Safety limits bypassed by design.`);
+    } else {
+        console.log(`Guess game did not tip: guess ${guess} is not below target ${target}.`);
+    }
+
+    resetGuessGame();
+    saveSettings();
+    return true;
+}
+
+// Regex auto-tip: when enabled, every broadcaster message that isn't already a
+// recognised command is scanned, and the bot tips (matches × perMatch) tokens,
+// where `matches` is how many times the pattern hits the message (global). Use
+// `.` for "1 token per character", `a` for "1 token per letter a", etc. Off by
+// default. The amount is capped by Max tip and gated by the Limit and Rate
+// safety nets; it skips silently (no chat message) when a limit would be
+// exceeded so it never spams the room.
+function applyRegexTip(textContent) {
+    const rt = botStatus.regexTip;
+    if (!rt || !rt.enabled || !rt.pattern) return;
+
+    let re;
+    try {
+        re = new RegExp(rt.pattern, 'g');
+    } catch (e) {
+        console.warn('Regex tip: invalid pattern', rt.pattern, e);
+        return;
+    }
+
+    const matches = (textContent.match(re) || []).length;
+    const perMatch = parseInt(rt.perMatch, 10) || 0;
+    if (matches <= 0 || perMatch <= 0) return;
+
+    const amount = effectiveTip(matches * perMatch);   // capped by Max tip
+    if (amount <= 0) return;
+
+    if (!isWithinLimit(amount) || !isWithinRate(amount)) {
+        console.log(`Regex tip skipped: ${amount} tk (matched ${matches}×) would exceed a limit.`);
+        return;
+    }
+
+    tip(broadcasterUsername, amount);
+    botStatus.currentlyTipped += amount;
+    recordTip(amount);
+    console.log(`Regex tip: "${rt.pattern}" matched ${matches}× → tipped ${amount} tk`);
+}
+
 const broadcasterCommands = [
     {
         command: 'tip',
         regex: /^\d+$/,
         handler: (broadcasterUsername, textContent) => {
             const tipAmount = parseInt(textContent, 10);
+            if (handleGuessGameNumber(broadcasterUsername, tipAmount)) return;
+            if (!botStatus.numberTipEnabled) return;   // number tipping turned off in the panel
             if (!isWithinLimit(tipAmount)) {
                 const remaining = botStatus.limit - botStatus.currentlyTipped;
                 simulateTyping(remaining <= 0
@@ -271,6 +357,55 @@ const broadcasterCommands = [
         }
     },
     {
+        command: 'ladder',
+        regex: /^ladder (\d+)( (\d+))?$/,
+        handler: (broadcasterUsername, textContent) => {
+            const parts = textContent.split(' ');
+            const top = parseInt(parts[1]);
+            const delaySec = parts[2] !== undefined ? parseInt(parts[2]) : 0;
+            const delayMs = Math.max(200, delaySec * 1000);
+
+            if (botStatus.repeatInterval) {
+                clearInterval(botStatus.repeatInterval);
+                botStatus.repeatInterval = null;
+            }
+
+            let next = 1;
+            console.log(`Ladder starting: 1..${top}, delay=${delayMs}ms, maxTip=${botStatus.maxTip}, limit=${botStatus.limit}, rateLimit=${botStatus.rateLimit}, currentlyTipped=${botStatus.currentlyTipped}`);
+
+            const doTip = () => {
+                if (next > top) {
+                    if (botStatus.repeatInterval) {
+                        clearInterval(botStatus.repeatInterval);
+                        botStatus.repeatInterval = null;
+                    }
+                    console.log(`Ladder finished after tipping up to ${next - 1}.`);
+                    return;
+                }
+
+                const tipAmount = next;
+
+                if (!isWithinLimit(tipAmount) || !isWithinMaxTip(tipAmount) || !isWithinRate(tipAmount)) {
+                    if (botStatus.repeatInterval) {
+                        clearInterval(botStatus.repeatInterval);
+                        botStatus.repeatInterval = null;
+                    }
+                    console.log(`Ladder stopped: tip of ${tipAmount} exceeded a limit.`);
+                    return;
+                }
+
+                tip(broadcasterUsername, tipAmount);
+                botStatus.currentlyTipped += tipAmount;
+                recordTip(tipAmount);
+                console.log(`Ladder tip ${tipAmount}/${top}`);
+                next++;
+            };
+
+            doTip();
+            botStatus.repeatInterval = setInterval(doTip, delayMs);
+        }
+    },
+    {
         command: 'repeat_random',
         regex: /^repeat random (\d+)( (\d+))?$/,
         handler: (broadcasterUsername, textContent) => {
@@ -342,17 +477,36 @@ const broadcasterCommands = [
                 simulateTyping(reason, 1).then();
                 return;
             }
+            // Snapshot the balance so we can confirm the tokens actually land
+            // before telling the room the purchase went through.
+            const balanceBefore = getTokenBalance();
             buyTokens(amount)
-                .then(ok => {
-                    if (ok) {
+                .then(async ok => {
+                    if (!ok) {
+                        console.warn(`Buy of ${amount} did not complete (purchase UI not found).`);
+                        return;
+                    }
+                    const landed = await waitForBalanceIncrease(balanceBefore, amount);
+                    if (landed) {
                         botStatus.currentlyBought += amount;
                         console.log(`Bought ${amount} tokens. Total bought this session: ${botStatus.currentlyBought}`);
                         simulateTyping(`Done — bought the ${amount}-token package.`, 1).then();
                     } else {
-                        console.warn(`Buy of ${amount} did not complete (purchase UI not found).`);
+                        console.warn(`Buy of ${amount}: clicked Complete Purchase but the balance did not go up in time — not confirming.`);
                     }
                 })
                 .catch(err => console.warn('Buy failed:', err));
+        }
+    },
+    {
+        command: 'packages',
+        regex: /^packages$/,
+        handler: () => {
+            const available = allowedBuyPackages();
+            const msg = available.length
+                ? `Available packages: ${available.map(formatPackage).join(', ')}.`
+                : 'No packages are currently buyable (check the min/max/limit settings).';
+            simulateTyping(msg, 1).then();
         }
     },
     {
@@ -559,6 +713,19 @@ function tip(username, tip_amount) {
 // real package *before* opening the purchase widget.
 const BUY_PACKAGES = [100, 200, 400, 550, 750, 1000, 1255, 2025, 4050, 6350, 12700];
 
+// Bonus tokens Chaturbate advertises on each package, as a percentage (the
+// "(10% Bonus)" label in the purchase widget). The 100 package has none.
+const PACKAGE_BONUS = {
+    100: 0, 200: 5, 400: 10, 550: 21, 750: 31, 1000: 37,
+    1255: 38, 2025: 39, 4050: 39, 6350: 40, 12700: 40
+};
+
+// "400 (+10%)" — or just "100" when the package carries no bonus.
+function formatPackage(p) {
+    const bonus = PACKAGE_BONUS[p];
+    return bonus ? `${p} (+${bonus}%)` : `${p}`;
+}
+
 // Packages currently buyable: within the user's min/max bounds AND small enough
 // to fit the remaining buy budget (so the ceiling drops as she buys).
 function remainingBuyBudget() {
@@ -609,6 +776,22 @@ function waitForElement(selector, timeout = 6000, interval = 150) {
             const el = document.querySelector(selector);
             if (el) return resolve(el);
             if (Date.now() - start > timeout) return resolve(null);
+            setTimeout(check, interval);
+        })();
+    });
+}
+
+// Polls the header balance until it has risen by at least `amount` above
+// `before` (i.e. the purchased tokens have actually landed). Resolves true on
+// confirmation, false on timeout / unreadable balance.
+function waitForBalanceIncrease(before, amount, timeout = 12000, interval = 500) {
+    if (before === null) return Promise.resolve(false);
+    return new Promise(resolve => {
+        const start = Date.now();
+        (function check() {
+            const now = getTokenBalance();
+            if (now !== null && now >= before + amount) return resolve(true);
+            if (Date.now() - start > timeout) return resolve(false);
             setTimeout(check, interval);
         })();
     });
@@ -691,6 +874,8 @@ function startObserveNewMessages() {
             const command = broadcasterCommands.find(c => new RegExp(c.regex).test(textContent));
             if (command)
                 command.handler(broadcasterUsername, textContent);
+            else
+                applyRegexTip(textContent);
         } else {
             const command = userCommands.find(c => new RegExp(c.regex).test(textContent));
             if (command)
@@ -906,10 +1091,13 @@ const SETTINGS_KEY = 'tipBotSettings';
 function saveSettings() {
     try {
         localStorage.setItem(SETTINGS_KEY, JSON.stringify({
+            numberTipEnabled: botStatus.numberTipEnabled,
             maxTip: botStatus.maxTip,
             limit: botStatus.limit,
             rateLimit: botStatus.rateLimit,
             random: botStatus.random,
+            guessGame: botStatus.guessGame,
+            regexTip: botStatus.regexTip,
             buy: botStatus.buy
         }));
     } catch (e) {
@@ -922,10 +1110,13 @@ function loadSettings() {
         const raw = localStorage.getItem(SETTINGS_KEY);
         if (!raw) return;
         const s = JSON.parse(raw);
+        if (typeof s.numberTipEnabled === 'boolean') botStatus.numberTipEnabled = s.numberTipEnabled;
         if (typeof s.maxTip === 'number') botStatus.maxTip = s.maxTip;
         if (typeof s.limit === 'number') botStatus.limit = s.limit;
         if (typeof s.rateLimit === 'number') botStatus.rateLimit = s.rateLimit;
         if (s.random && typeof s.random === 'object') botStatus.random = s.random;
+        if (s.guessGame && typeof s.guessGame === 'object') botStatus.guessGame = {...botStatus.guessGame, ...s.guessGame};
+        if (s.regexTip && typeof s.regexTip === 'object') botStatus.regexTip = {...botStatus.regexTip, ...s.regexTip};
         if (s.buy && typeof s.buy === 'object') botStatus.buy = {...botStatus.buy, ...s.buy};
     } catch (e) {
         console.warn('Could not load settings:', e);
@@ -1128,6 +1319,19 @@ function createTipBotPanel() {
         return b;
     }
 
+    // number tipping (the default game): a bare number in chat tips that amount
+    const numberTipEnable = document.createElement('input');
+    numberTipEnable.type = 'checkbox';
+    numberTipEnable.checked = botStatus.numberTipEnabled !== false;
+    const numberTipRow = document.createElement('div');
+    Object.assign(numberTipRow.style, {display: 'flex', alignItems: 'center', gap: '6px', margin: '5px 0'});
+    const numberTipLab = document.createElement('span');
+    numberTipLab.textContent = 'Number tips';
+    numberTipLab.style.flex = '1';
+    numberTipRow.appendChild(numberTipEnable);
+    numberTipRow.appendChild(numberTipLab);
+    body.appendChild(numberTipRow);
+
     const maxTipInput = numInput(botStatus.maxTip);
     const limitInput = numInput(botStatus.limit);
     const rateInput = numInput(botStatus.rateLimit);
@@ -1154,6 +1358,61 @@ function createTipBotPanel() {
     randRow.appendChild(randomMin);
     randRow.appendChild(randomMax);
     body.appendChild(randRow);
+
+    // guess game: broadcaster gets two higher/lower hints, then the third
+    // numeric guess tips only when it is below the target. This deliberately
+    // bypasses max-tip, cumulative limit, and rate limit.
+    const guessGameEnable = document.createElement('input');
+    guessGameEnable.type = 'checkbox';
+    guessGameEnable.checked = !!(botStatus.guessGame && botStatus.guessGame.enabled);
+    const guessGameTarget = numInput(botStatus.guessGame ? (botStatus.guessGame.target ?? '') : '');
+    guessGameTarget.style.width = '56px';
+
+    const guessGameRow = document.createElement('div');
+    Object.assign(guessGameRow.style, {display: 'flex', alignItems: 'center', gap: '4px', margin: '5px 0'});
+    const guessGameLab = document.createElement('span');
+    guessGameLab.textContent = 'Guess game';
+    guessGameLab.style.flex = '1';
+    guessGameRow.appendChild(guessGameEnable);
+    guessGameRow.appendChild(guessGameLab);
+    guessGameRow.appendChild(guessGameTarget);
+    body.appendChild(guessGameRow);
+
+    const guessGameHint = document.createElement('div');
+    guessGameHint.textContent = '2 hints, 3rd guess tips if below target';
+    Object.assign(guessGameHint.style, {fontSize: '11px', color: '#888', margin: '2px 0 4px'});
+    body.appendChild(guessGameHint);
+
+    // regex auto-tip: [x] Regex  [pattern]  [tk/match]
+    const regexEnable = document.createElement('input');
+    regexEnable.type = 'checkbox';
+    regexEnable.checked = !!(botStatus.regexTip && botStatus.regexTip.enabled);
+    const regexPatternInput = document.createElement('input');
+    regexPatternInput.type = 'text';
+    regexPatternInput.placeholder = '.';
+    regexPatternInput.value = botStatus.regexTip ? (botStatus.regexTip.pattern ?? '') : '';
+    Object.assign(regexPatternInput.style, {
+        width: '70px', padding: '3px', border: `1px solid ${line}`,
+        borderRadius: '4px', background: '#111', color: text
+    });
+    const regexPer = numInput(botStatus.regexTip ? (botStatus.regexTip.perMatch ?? 1) : 1);
+    regexPer.style.width = '40px';
+
+    const regexRow = document.createElement('div');
+    Object.assign(regexRow.style, {display: 'flex', alignItems: 'center', gap: '4px', margin: '5px 0'});
+    const regexLab = document.createElement('span');
+    regexLab.textContent = 'Regex';
+    regexLab.style.flex = '1';
+    regexRow.appendChild(regexEnable);
+    regexRow.appendChild(regexLab);
+    regexRow.appendChild(regexPatternInput);
+    regexRow.appendChild(regexPer);
+    body.appendChild(regexRow);
+
+    const regexHint = document.createElement('div');
+    regexHint.textContent = 'tk per match · "." = per char';
+    Object.assign(regexHint.style, {fontSize: '11px', color: '#888', margin: '2px 0 4px'});
+    body.appendChild(regexHint);
 
     const hint = document.createElement('div');
     hint.textContent = '-1 = no limit';
@@ -1209,6 +1468,10 @@ function createTipBotPanel() {
     buyHint.textContent = 'Packages: ' + BUY_PACKAGES.join('·');
     Object.assign(buyHint.style, {fontSize: '10px', color: '#888', margin: '2px 0 4px', lineHeight: '1.3'});
     body.appendChild(buyHint);
+
+    const buyAvailable = document.createElement('div');
+    Object.assign(buyAvailable.style, {fontSize: '10px', color: '#888', margin: '0 0 4px', lineHeight: '1.3'});
+    body.appendChild(buyAvailable);
 
     const buyStatus = document.createElement('div');
     Object.assign(buyStatus.style, {
@@ -1277,6 +1540,7 @@ function createTipBotPanel() {
     rebuild.addEventListener('click', () => doRefreshSpending(true));
 
     applyBtn.addEventListener('click', () => {
+        botStatus.numberTipEnabled = numberTipEnable.checked;
         const mt = parseInt(maxTipInput.value, 10);
         const lm = parseInt(limitInput.value, 10);
         const rt = parseInt(rateInput.value, 10);
@@ -1287,6 +1551,22 @@ function createTipBotPanel() {
             enabled: randomEnable.checked,
             min: parseInt(randomMin.value, 10) || 0,
             max: parseInt(randomMax.value, 10) || 0
+        };
+        const previousGuessEnabled = !!(botStatus.guessGame && botStatus.guessGame.enabled);
+        const previousGuessTarget = parseInt(botStatus.guessGame && botStatus.guessGame.target, 10) || 0;
+        const nextGuessTarget = parseInt(guessGameTarget.value, 10) || 0;
+        botStatus.guessGame = {
+            enabled: guessGameEnable.checked,
+            target: nextGuessTarget,
+            guesses: (botStatus.guessGame && botStatus.guessGame.guesses) || 0
+        };
+        if (previousGuessEnabled !== botStatus.guessGame.enabled || previousGuessTarget !== nextGuessTarget) {
+            resetGuessGame();
+        }
+        botStatus.regexTip = {
+            enabled: regexEnable.checked,
+            pattern: regexPatternInput.value.trim(),
+            perMatch: parseInt(regexPer.value, 10) || 0
         };
         const bl = parseInt(buyLimitInput.value, 10);
         const bmin = parseInt(buyMinInput.value, 10);
@@ -1312,16 +1592,17 @@ function createTipBotPanel() {
     });
 
     // any edit marks the fields dirty so the sync loop stops overwriting them
-    [maxTipInput, limitInput, rateInput, randomMin, randomMax,
+    [maxTipInput, limitInput, rateInput, randomMin, randomMax, guessGameTarget, regexPatternInput, regexPer,
      buyLimitInput, buyMinInput, buyMaxInput].forEach(el =>
         el.addEventListener('input', () => { panelDirty = true; }));
-    [randomEnable, buyEnable].forEach(el =>
+    [numberTipEnable, randomEnable, guessGameEnable, regexEnable, buyEnable].forEach(el =>
         el.addEventListener('change', () => { panelDirty = true; }));
 
     // keep inputs in sync with external (chat-command) changes, but never while
     // the user is in the middle of editing them
     refreshPanelInputs = () => {
         if (panelDirty) return;
+        numberTipEnable.checked = botStatus.numberTipEnabled !== false;
         maxTipInput.value = botStatus.maxTip;
         limitInput.value = botStatus.limit;
         rateInput.value = botStatus.rateLimit;
@@ -1329,6 +1610,15 @@ function createTipBotPanel() {
             randomEnable.checked = !!botStatus.random.enabled;
             randomMin.value = botStatus.random.min ?? '';
             randomMax.value = botStatus.random.max ?? '';
+        }
+        if (botStatus.guessGame) {
+            guessGameEnable.checked = !!botStatus.guessGame.enabled;
+            guessGameTarget.value = botStatus.guessGame.target ?? '';
+        }
+        if (botStatus.regexTip) {
+            regexEnable.checked = !!botStatus.regexTip.enabled;
+            regexPatternInput.value = botStatus.regexTip.pattern ?? '';
+            regexPer.value = botStatus.regexTip.perMatch ?? 1;
         }
         buyEnable.checked = !!botStatus.buy.enabled;
         buyLimitInput.value = botStatus.buy.limit;
@@ -1343,6 +1633,7 @@ function createTipBotPanel() {
         line += ` · Tipped: ${botStatus.currentlyTipped} tk`;
         if (botStatus.rateLimit !== -1) line += ` · ${used}/${botStatus.rateLimit}/min`;
         if (botStatus.repeatInterval) line += ' · repeating…';
+        if (botStatus.guessGame && botStatus.guessGame.enabled) line += ` · guess ${botStatus.guessGame.guesses || 0}/3`;
         status.textContent = line;
 
         let buyLine = botStatus.buy.enabled ? 'Buying ON' : 'Buying OFF';
@@ -1350,6 +1641,9 @@ function createTipBotPanel() {
         if (botStatus.buy.limit !== -1) buyLine += `/${botStatus.buy.limit}`;
         buyLine += ' tk';
         buyStatus.textContent = buyLine;
+
+        const available = allowedBuyPackages();
+        buyAvailable.textContent = 'Available: ' + (available.length ? available.join('·') : 'none');
 
         refreshPanelInputs();
     }, 1000);
