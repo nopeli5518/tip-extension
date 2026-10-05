@@ -75,8 +75,8 @@ sends live status back the same way.
 When **Guess game** is enabled, bare broadcaster numbers are guesses instead of
 normal number-tip commands:
 
-- Guess 1 and 2 — the bot replies with rotating hint variants, e.g. `higher`,
-  `⬆️`, `the number is higher`, `lower`, `⬇️`, or `the number is lower`.
+- Guess 1 and 2 — the bot replies with rotating hint variants, e.g. `⬆️`,
+  `up`, `bigger`, `larger`, `lower`, `⬇️`, `down`, or `smaller`.
 - Exact match — the bot tips twice the guessed amount immediately, then resets
   for another three guesses.
 - Guess 3 — the bot tips the guessed amount when the guess is below or equal to

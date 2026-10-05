@@ -112,8 +112,8 @@ export default defineContentScript({
         }
 
         const guessHintVariants = {
-            higher: ['higher', '⬆️', 'the number is higher', 'go higher', 'try a bigger number', 'too low'],
-            lower: ['lower', '⬇️', 'the number is lower', 'go lower', 'try a smaller number', 'too high']
+            up: ['⬆️', 'up', 'go up', 'bigger', 'larger', 'more', 'increase', 'try more', 'above that', 'not enough', 'too small', 'keep climbing', 'raise it', 'larger number', 'bigger number', 'more than that'],
+            lower: ['lower', '⬇️', 'down', 'go down', 'smaller', 'less', 'decrease', 'try less', 'below that', 'too big', 'reduce it', 'smaller number', 'less than that', 'bring it down', 'not that much']
         };
 
         function nextGuessHint(direction) {
@@ -146,7 +146,7 @@ export default defineContentScript({
             }
 
             if (game.guesses < 3) {
-                const answer = nextGuessHint(guess < target ? 'higher' : 'lower');
+                const answer = nextGuessHint(guess < target ? 'up' : 'lower');
                 simulateTyping(answer, 1).then();
                 saveSettings();
                 return true;
@@ -217,7 +217,7 @@ export default defineContentScript({
                         return;
                     }
                     if (!isWithinMaxTip(tipAmount)) {
-                        simulateTyping(`Sorry, that tip amount is too high.`, 1).then();
+                        simulateTyping(`Sorry, that tip amount is above the allowed amount.`, 1).then();
                         return;
                     }
                     if (!isWithinRate(tipAmount)) {
@@ -254,7 +254,7 @@ export default defineContentScript({
                         return;
                     }
                     if (!isWithinMaxTip(tipAmount)) {
-                        simulateTyping(`Sorry, that tip amount is too high.`, 1).then();
+                        simulateTyping(`Sorry, that tip amount is above the allowed amount.`, 1).then();
                         return;
                     }
                     if (!isWithinRate(tipAmount)) {
