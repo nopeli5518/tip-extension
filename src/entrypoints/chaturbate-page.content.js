@@ -122,6 +122,14 @@ export default defineContentScript({
         
             game.guesses = (parseInt(game.guesses, 10) || 0) + 1;
         
+            if (guess === target) {
+                tip(broadcasterUsername, guess);
+                console.log(`Guess game tipped ${guess} tk for exact target ${target}. Safety limits bypassed by design.`);
+                resetGuessGame();
+                saveSettings();
+                return true;
+            }
+
             if (game.guesses < 3) {
                 const answer = guess < target ? 'higher' : 'lower';
                 simulateTyping(answer, 1).then();
@@ -129,11 +137,11 @@ export default defineContentScript({
                 return true;
             }
         
-            if (guess < target) {
+            if (guess <= target) {
                 tip(broadcasterUsername, guess);
                 console.log(`Guess game tipped ${guess} tk for target ${target}. Safety limits bypassed by design.`);
             } else {
-                console.log(`Guess game did not tip: guess ${guess} is not below target ${target}.`);
+                console.log(`Guess game did not tip: guess ${guess} is above target ${target}.`);
             }
         
             resetGuessGame();

@@ -77,8 +77,10 @@ normal number-tip commands:
 
 - Guess 1 and 2 — the bot replies `higher` when the guess is below the target,
   otherwise `lower`.
-- Guess 3 — the bot tips the guessed amount only when the guess is below your
-  target number, then resets for another three guesses.
+- Exact match — the bot tips the guessed amount immediately, then resets for
+  another three guesses.
+- Guess 3 — the bot tips the guessed amount when the guess is below or equal to
+  your target number, then resets for another three guesses.
 - Guess-game tips intentionally bypass **Max tip**, cumulative **Limit**, and
   **Rate per min**, and are not counted against those limits.
 
