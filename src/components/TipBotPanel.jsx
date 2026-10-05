@@ -75,10 +75,12 @@ function Field({ label, value, onChange, width = 'w-20' }) {
     <label className="flex items-center justify-between gap-3 text-slate-300">
       <span>{label}</span>
       <input
-        type="number"
+        type="text"
+        inputMode="numeric"
+        pattern="-?[0-9]*"
         value={value}
         onChange={(event) => onChange(event.target.value)}
-        className={`${width} rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1 text-right text-slate-100 outline-none ring-cyan-400/40 transition focus:ring-2`}
+        className={`${width} appearance-none rounded-lg border border-white/10 bg-slate-950/80 px-2 py-1 text-right font-mono tabular-nums text-slate-100 outline-none ring-cyan-400/40 transition placeholder:text-slate-600 focus:border-cyan-300/50 focus:ring-2`}
       />
     </label>
   );
