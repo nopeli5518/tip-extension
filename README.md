@@ -1,202 +1,105 @@
-# Chaturbate Tip Bot (Firefox extension)
+# Chaturbate Tip Bot
 
-A chat-driven tipping bot for Chaturbate, packaged as a Firefox extension. It
-watches the chat for commands and tips on your behalf, with optional max-tip,
-cumulative, and per-minute rate limits.
+A WXT-powered browser extension for Chaturbate tipping automation. The bot runs
+on broadcaster pages, watches chat commands, and exposes a modern React +
+Tailwind floating control panel.
 
-## Files
+> This automates real token tips and token purchases. Test carefully and make
+> sure this use is permitted by the site's terms before using it.
 
-- `manifest.json` — extension manifest (Manifest V3).
-- `background.js` — listens for the toolbar-button click and injects the bot.
-- `script.js` — the bot itself (runs in the page so it can use the site's
-  jQuery and CSRF cookie for same-origin tip requests).
+## Stack
 
-## How it works
+- **WXT** — extension framework and build/zip tooling.
+- **React** — floating control panel UI.
+- **Tailwind CSS** — isolated styling inside a shadow-root content-script UI.
+- **Main-world content script** — the bot logic runs in the page context so it
+  can use Chaturbate's same-origin tipping and purchase UI.
 
-The bot **loads only when you click the toolbar button** — it does not run
-automatically on page load. Clicking the button runs `background.js`, which uses
-`scripting.executeScript` (with `activeTab`, so no broad host-permission prompt)
-to inject `script.js` into the page's **main world**.
+## Source Layout
 
-Running in the main world matters: a normal content script lives in an isolated
-world and cannot see the page's `$`/jQuery, but the bot uses `$.post` /
-`$.cookie` and posts to `chaturbate.com/tipping/...`. Injecting into the main
-world keeps everything same-origin.
+- `wxt.config.ts` — WXT config, manifest metadata, React module, Tailwind Vite plugin.
+- `src/entrypoints/background.ts` — toolbar click handler; toggles the panel.
+- `src/entrypoints/chaturbate-page.content.js` — main-world bot logic and command handling.
+- `src/entrypoints/chaturbate-ui.content.jsx` — React/Tailwind shadow-root UI entrypoint.
+- `src/components/TipBotPanel.jsx` — panel component and UI-to-bot message bridge.
+- `src/entrypoints/tipbot.css` — Tailwind import and panel CSS boundary.
 
-Clicking the button again on an already-loaded page just **toggles the control
-panel's visibility** (the bot guards against running twice).
-
-## Install (temporary, for testing)
-
-The extension works on both Firefox and Chrome from the same `manifest.json`
-(the `background` block declares a `service_worker` for Chrome and a `scripts`
-event page for Firefox; each browser uses the key it understands).
-
-### Firefox
-
-1. Open Firefox and go to `about:debugging#/runtime/this-firefox`.
-2. Click **Load Temporary Add-on…**.
-3. Select `manifest.json` in this folder.
-4. Open a broadcaster page on `chaturbate.com`, open the PM/chat panel, then
-   **click the Tip Bot toolbar button** to load the bot.
-
-Temporary add-ons are removed when Firefox restarts. To install permanently you
-must sign the extension via [AMO](https://addons.mozilla.org/developers/)
-(`web-ext sign`) or use Firefox Developer/Nightly Edition with unsigned add-ons
-allowed.
-
-### Chrome
-
-1. Open Chrome and go to `chrome://extensions`.
-2. Enable **Developer mode** (top-right toggle).
-3. Click **Load unpacked** and select this folder.
-4. Open a broadcaster page on `chaturbate.com`, open the PM/chat panel, then
-   **click the Tip Bot toolbar button** to load the bot.
-
-Unpacked extensions stay installed until removed, but Chrome will nag on each
-launch; that's expected for developer-loaded extensions.
-
-## Packaging
+## Install Dependencies
 
 ```sh
-# from this directory
-zip -r tip-bot.zip manifest.json background.js script.js
-# or, with Mozilla's tool:
-npx web-ext build
+npm install
 ```
 
-## Control panel
+## Development
 
-A draggable panel appears on the broadcaster page (top-right by default). Use it
-to change parameters at any time without chat commands:
+```sh
+# Chrome/Chromium target
+npm run dev
 
-- **Number tips** — master switch for the default game (a bare number in chat
-  tips that amount). On by default; untick to ignore plain-number messages.
-- **Max tip / Limit / Rate per min** — same meaning as the chat commands; `-1`
-  means no limit. Click **Apply** to commit and persist them.
-- **Random** — enable and set min/max for random tipping.
-- **Guess game** — enable a three-guess game and set your private target
-  number. Broadcaster bare-number messages become guesses while this is on.
-- **Regex** — tip automatically on each broadcaster message (see **Regex
-  tipping** below). Off by default.
-- **Stop repeat** — cancels an active repeat run.
-- Settings persist across page reloads (stored in `localStorage`), and the
-  fields stay in sync when limits are changed via chat commands.
-- A live status line shows tokens tipped this session, the per-minute usage, and
-  whether a repeat is running.
-- Drag the title bar to move the panel; click **–** to collapse it.
+# Firefox target
+npm run dev:firefox
+```
 
-## Regex tipping
+WXT opens a browser with the extension installed. Visit a Chaturbate broadcaster
+page; the panel appears automatically and the toolbar button toggles it.
 
-The **Regex** row in the panel tips automatically based on what the broadcaster
-types. For every broadcaster chat message that isn't already a bot command, the
-bot counts how many times the pattern matches (globally) and tips
-`matches × tk-per-match`.
+## Build
 
-- **Off by default** — tick the checkbox and click **Apply** to enable.
-- **Pattern** — a regular expression *source* (no slashes). Each match is worth
-  one unit. Examples:
-  - `.` — **1 token per character** (`.` matches every single character, so a
-    20-character message tips 20). Note `.*` is *not* per-character — a global
-    `.*` matches the whole string at once, not each letter.
-  - `a` — 1 token for every letter `a` in the message.
-  - `\w` — 1 token per word character (letters/digits/underscore, no spaces).
-- **tk/match** — tokens awarded per match (default 1).
-- Each auto-tip is **capped by Max tip** and **skipped** (silently, no chat
-  message) if it would exceed the cumulative **Limit** or the **Rate**. Set Max
-  tip to `-1` if you want a long message to tip its full length.
-- Messages that are recognised commands (`500`, `buy 400`, `packages`, …) are
-  handled as commands and are **not** also regex-tipped.
+```sh
+npm run build
+npm run build:firefox
+npm run zip
+npm run zip:firefox
+```
 
-## Guess game
+Build output is written under `.output/`.
 
-The **Guess game** row lets you choose a private target number in the panel.
-When enabled, a bare number from the broadcaster is treated as a guess instead
-of the default number-tip command:
+## Control Panel
+
+The floating panel lets you change settings without chat commands:
+
+- **Number tips** — bare numbers from the broadcaster tip that amount when enabled.
+- **Max tip / Limit / Rate per min** — safety controls; `-1` means unlimited.
+- **Random** — enables `tip random` and `repeat random` ranges.
+- **Guess game** — three guesses against your private target number.
+- **Regex** — tips based on regex matches in broadcaster messages.
+- **Buying** — gated controls for one-click token package purchases.
+- **Spending** — pulls and caches token spending totals from Chaturbate token stats.
+
+Settings persist in page `localStorage` and are owned by the main-world bot
+entrypoint. The React panel sends settings over `window.postMessage`; the bot
+sends live status back the same way.
+
+## Guess Game
+
+When **Guess game** is enabled, bare broadcaster numbers are guesses instead of
+normal number-tip commands:
 
 - Guess 1 and 2 — the bot replies `higher` when the guess is below the target,
   otherwise `lower`.
-- Guess 3 — the bot tips the guessed amount **only if the guess is below your
-  target number**, then resets the game for another three guesses.
+- Guess 3 — the bot tips the guessed amount only when the guess is below your
+  target number, then resets for another three guesses.
 - Guess-game tips intentionally bypass **Max tip**, cumulative **Limit**, and
-  **Rate per min**. They are also not counted against those limits.
+  **Rate per min**, and are not counted against those limits.
 
-## Spending summary
-
-The panel's **Spending** section pulls your token transaction history from
-Chaturbate's `token-stats` API (same-origin, uses your logged-in session) and
-shows:
-
-- **Today** — tokens spent today.
-- **Last 14 days** — rolling-period total.
-- **Total tracked** — sum across all fetched history.
-- A short list of the most recent days.
-
-Spending is **cached in `localStorage`**. The first load fetches your full
-history; after that the panel shows the cached totals instantly and only fetches
-transactions newer than the last one it saw — so opening it is fast and makes
-just a few API calls. Click **Refresh spending** to pull the latest tips, or
-**rebuild full history** to discard the cache and re-fetch everything from
-scratch. Detailed breakdowns are also printed to the console.
-
-## Buying tokens
-
-> ⚠️ **This spends real money.** `buy 400` drives Chaturbate's one-click
-> purchase UI: it opens the purchase widget, selects the matching package, and
-> clicks **Complete Purchase**, which charges your saved payment method
-> instantly with no further confirmation. Because the bot fires on chat
-> messages, treat this as a live spend button.
-
-The **Buy tokens** section of the panel controls it:
-
-- **Allow buying** — master switch. Buying is **OFF by default**; nothing is
-  purchased until you tick this and click **Apply**.
-- **Buy limit** — maximum tokens the bot may buy cumulatively this session
-  (`-1` = no limit).
-- **Min package / Max package** — exclude packages that are too small or too
-  large (`-1` = no bound). Available packages are fixed by Chaturbate:
-  `100 · 200 · 400 · 550 · 750 · 1000 · 1255 · 2025 · 4050 · 6350 · 12700`.
-
-The chat command is **`buy <amount>`** (broadcaster-only), e.g. `buy 400`. The
-amount must match one of the packages above and pass the limit/min/max checks,
-otherwise the purchase is rejected and the reason is reported in chat.
-
-How it works under the hood: the purchase flow is rendered by Chaturbate's own
-React app in the page (not a cross-origin iframe), so the injected script can
-find and click the real buttons — `.product-button` for the package and
-`.complete-purchase-button` to confirm. If Chaturbate changes that markup, these
-selectors (in `buyTokens()` / `findPurchaseTrigger()` in `script.js`) need
-updating.
-
-## Chat commands
+## Chat Commands
 
 Broadcaster-only:
 
-- `<number>` — tip that many tokens (respects all limits). Governed by the
-  **Number tips** panel switch; ignored when that's unticked. If **Guess game**
-  is enabled, bare numbers are handled by that game instead.
-- `tip balance` — tip the full available balance (bypasses max-tip, capped by
-  the rate limit).
-- `token balance` / `tip balance` — report/use available tokens.
-- `repeat <amount> <times> [delaySeconds]` — tip a fixed amount repeatedly.
-- `repeat random <times> [delaySeconds]` — tip a fresh random amount (drawn
-  from the panel's Random min/max) each time. Stops as soon as a draw would
-  exceed the max-tip, cumulative, or rate limit.
-- `ladder <n> [delaySeconds]` — tip an increasing ladder `1, 2, 3, … n`, one tip
-  per step. Stops early if the next step would exceed the max-tip, cumulative,
-  or rate limit. Cancel with `stop repeat`.
-- `stop repeat` — stop an active repeat (fixed or random).
-- `buy <amount>` — buy a token package (see **Buying tokens** above; OFF by
-  default).
-- `packages` — report which packages are currently buyable (after applying the
-  min/max/limit settings), the same list the panel's **Available** line shows.
+- `<number>` — tip that many tokens, unless Guess game is enabled.
+- `tip random` — tip a random amount from the configured range.
+- `token balance` — report available tokens after cumulative limit.
+- `tip balance` — tip the full available balance; bypasses max-tip, rate-limited.
+- `repeat <amount> <times> [delaySeconds]` — repeat a fixed tip.
+- `repeat random <times> [delaySeconds]` — repeat fresh random draws.
+- `ladder <n> [delaySeconds]` — tip `1, 2, 3, … n`.
+- `stop repeat` — stop active repeat/ladder tipping.
+- `buy <amount>` — buy an allowed token package when buying is enabled.
+- `packages` — list currently buyable packages.
 
 Anyone:
 
-- `max tip <n>` — set per-tip cap (`-1` = unlimited).
-- `limit <n>` — set cumulative cap (`-1` = unlimited).
-- `rate <n>` — set tokens-per-minute cap (`-1` = unlimited).
-- `update limits` — open the settings dialog.
-
-> Note: this automates real token tips. Test carefully and make sure such
-> automation is permitted by the site's terms before using it.
+- `max tip <n>` — set per-tip cap; `-1` means unlimited.
+- `limit <n>` — set cumulative cap; `-1` means unlimited.
+- `rate <n>` — set tokens-per-minute cap; `-1` means unlimited.
+- `update limits` — open the legacy in-page settings prompt.

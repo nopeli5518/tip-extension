@@ -12,7 +12,11 @@ amount-selection.html
 # macOS
 .DS_Store
 
+# Dependencies
+node_modules/
+
 # Build artifacts
 *.zip
 web-ext-artifacts/
-node_modules/
+.output/
+.wxt/

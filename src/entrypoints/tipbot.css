@@ -1,0 +1,10 @@
+@import "tailwindcss";
+
+:host {
+  font-size: 14px;
+}
+
+.tip-bot-root,
+.tip-bot-root * {
+  box-sizing: border-box;
+}
