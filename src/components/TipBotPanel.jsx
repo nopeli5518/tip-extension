@@ -198,7 +198,7 @@ export default function TipBotPanel() {
             </div>
             <Toggle label="Guess game" checked={draft.guessGame.enabled} onChange={(value) => update((d) => ({ ...d, guessGame: { ...d.guessGame, enabled: value } }))} />
             <Field label="Target" value={draft.guessGame.target} onChange={(value) => update((d) => ({ ...d, guessGame: { ...d.guessGame, target: value } }))} />
-            <p className="text-xs text-slate-500">Exact guesses tip double and reset; third guess tips if below target.</p>
+            <p className="text-xs text-slate-500">Hints rotate text/emoji variants; exact guesses tip double and reset.</p>
           </Section>
 
           <Section title="Regex">

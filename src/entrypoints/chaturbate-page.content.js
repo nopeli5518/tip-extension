@@ -27,7 +27,8 @@ export default defineContentScript({
             guessGame: {
                 enabled: false,
                 target: 0,
-                guesses: 0
+                guesses: 0,
+                hintIndex: 0
             },
             regexTip: {
                 enabled: false,    // OFF by default; tip per regex match on each broadcaster message
@@ -109,6 +110,19 @@ export default defineContentScript({
             if (!botStatus.guessGame) return;
             botStatus.guessGame.guesses = 0;
         }
+
+        const guessHintVariants = {
+            higher: ['higher', '⬆️', 'the number is higher', 'go higher', 'try a bigger number', 'too low'],
+            lower: ['lower', '⬇️', 'the number is lower', 'go lower', 'try a smaller number', 'too high']
+        };
+
+        function nextGuessHint(direction) {
+            const game = botStatus.guessGame;
+            const variants = guessHintVariants[direction] || [direction];
+            const index = parseInt(game.hintIndex, 10) || 0;
+            game.hintIndex = index + 1;
+            return variants[index % variants.length];
+        }
         
         function handleGuessGameNumber(broadcasterUsername, guess) {
             const game = botStatus.guessGame;
@@ -132,7 +146,7 @@ export default defineContentScript({
             }
 
             if (game.guesses < 3) {
-                const answer = guess < target ? 'higher' : 'lower';
+                const answer = nextGuessHint(guess < target ? 'higher' : 'lower');
                 simulateTyping(answer, 1).then();
                 saveSettings();
                 return true;
